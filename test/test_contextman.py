@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Test util.contextman
+# Test ppyutil.contextman
 
 # Imports
 import sys
@@ -9,7 +9,7 @@ import functools
 from pprint import pprint
 from types import MethodType
 import contextlib
-import util.contextman
+import ppyutil.contextman
 
 #
 # Test DynamicContext
@@ -59,7 +59,7 @@ def callback_func(name):
 def build_dyncon(nodes):
 	print('-' * 80)
 	nodes.clear()
-	context = util.contextman.DynamicContext()
+	context = ppyutil.contextman.DynamicContext()
 	nodes['A'] = context.enter_context(ContextClass('A'), key='A')
 	nodes['B'] = context.enter_context(ContextClass('B'))
 	nodes['C'] = context.register_callback(callback_func, 'C', key='C', parent=nodes['A'])
@@ -74,8 +74,9 @@ def build_dyncon(nodes):
 	nodes['L'] = context.enter_context(ContextClass('L'), key='L', parent=nodes['K'])
 	return context
 
+
 # noinspection PyUnreachableCode
-def test_DynamicContext():
+def test_dynamic_context():
 
 	print("Testing DynamicContext class")
 
@@ -237,7 +238,7 @@ def test_DynamicContext():
 # Test context wrappers
 #
 
-def test_ContextWrappers():
+def test_context_wrappers():
 
 	print("Creating cm")
 	cm = ContextClass('Printy', show_init=True)
@@ -250,7 +251,7 @@ def test_ContextWrappers():
 	print('-' * 60)
 
 	print("Creating cm (ConstructOnEnter)")
-	cm = util.contextman.ConstructOnEnter(ContextClass, 'Printy', show_init=True)
+	cm = ppyutil.contextman.ConstructOnEnter(ContextClass, 'Printy', show_init=True)
 	print("Before with statement")
 	with cm as result:
 		print(f"cm = {cm}")
@@ -261,7 +262,7 @@ def test_ContextWrappers():
 	print('-' * 60)
 
 	print("Creating cm (MakeReentrant)")
-	cm = util.contextman.MakeReentrant(ContextClass('Printy', show_init=True))
+	cm = ppyutil.contextman.MakeReentrant(ContextClass('Printy', show_init=True))
 	print("Before with statement")
 	with cm as result:
 		print(f"cm = {cm}")
@@ -280,7 +281,7 @@ def test_ContextWrappers():
 	print('-' * 60)
 
 	print("Creating cm (MakeReentrant + ConstructOnEnter)")
-	cm = util.contextman.MakeReentrant(util.contextman.ConstructOnEnter(ContextClass, 'Printy', show_init=True))
+	cm = ppyutil.contextman.MakeReentrant(ppyutil.contextman.ConstructOnEnter(ContextClass, 'Printy', show_init=True))
 	print("Before with statement")
 	with cm as result:
 		print(f"cm = {cm}")
@@ -300,7 +301,7 @@ def test_ContextWrappers():
 # Test ReentrantBase
 #
 
-class Pure(util.contextman.ReentrantBase):
+class Pure(ppyutil.contextman.ReentrantBase):
 
 	def __init__(self):
 		super().__init__()
@@ -326,7 +327,7 @@ class OneShot:
 		print("[OneShot] MY EXIT CODE")
 		return False
 
-class MultiShot(util.contextman.ReentrantBase, OneShot):
+class MultiShot(ppyutil.contextman.ReentrantBase, OneShot):
 	pass
 
 class ClassA:
@@ -364,7 +365,7 @@ class ClassB(ClassA):
 		print("[ClassB] __exit__ END")
 		return False
 
-class ClassC(util.contextman.ReentrantBase, ClassB):
+class ClassC(ppyutil.contextman.ReentrantBase, ClassB):
 
 	def __init__(self, blah, other):
 		super().__init__(blah + other)
@@ -400,7 +401,7 @@ class ClassD(ClassC):
 		print("[ClassD] _exit END")
 		return False
 
-def test_ReentrantBase():
+def test_reentrant_base():
 
 	print()
 
@@ -464,7 +465,7 @@ class RMA:
 		print("[RMA] Exit")
 		return False
 
-class RMB(RMA, metaclass=util.contextman.ReentrantMeta):
+class RMB(RMA, metaclass=ppyutil.contextman.ReentrantMeta):
 
 	def __init__(self):
 		print(f"[RMB] Preinit")
@@ -502,7 +503,7 @@ class RMC(RMB):
 		print("[RMC] Exit END")
 		return suppress
 
-def test_ReentrantMeta():
+def test_reentrant_meta():
 
 	print()
 
@@ -542,6 +543,7 @@ def test_ReentrantMeta():
 	pprint(vars(RMC))
 	print()
 
+	# noinspection PyPep8Naming
 	def test_RM(cls, *args, **kwargs):
 		print(f"With {cls.__name__}:")
 		C = cls(*args, **kwargs)
@@ -574,6 +576,7 @@ class SubA:
 	def __enter__(self):
 		with contextlib.ExitStack() as stack:
 			print("[SubA] Enter")
+			# noinspection PyTypeChecker
 			stack.push(MethodType(SubA.__exit__, self))
 			self.printy(f"Acquire ResA")
 			self.printy(f"Process ResA")
@@ -604,6 +607,7 @@ class SubB(SubA):
 		with contextlib.ExitStack() as stack:
 			print("[SubB] Enter")
 			result = super().__enter__()
+			# noinspection PyTypeChecker
 			stack.push(MethodType(SubB.__exit__, self))
 			self.printy(f"Acquire ResB")
 			self.printy(f"Process ResB")
@@ -628,6 +632,7 @@ class SubC(SubB):
 		with contextlib.ExitStack() as stack:
 			print("[SubC] Enter")
 			result = super().__enter__()
+			# noinspection PyTypeChecker
 			stack.push(MethodType(SubC.__exit__, self))
 			self.printy(f"Acquire ResC")
 			self.printy(f"Process ResC")
@@ -647,7 +652,7 @@ class SubC(SubB):
 			suppress = super().__exit__(exc_type, exc_val, exc_tb)
 		return suppress
 
-def test_SubclassStrategy():
+def test_subclass_strategy():
 
 	for error in range(4):
 		if error > 0:
@@ -694,11 +699,11 @@ def test_SubclassStrategy():
 
 def main():
 	print("BEGIN")
-	# test_DynamicContext()
-	# test_ContextWrappers()
-	# test_ReentrantBase()
-	# test_ReentrantMeta()
-	test_SubclassStrategy()
+	# test_dynamic_context()
+	# test_context_wrappers()
+	# test_reentrant_base()
+	# test_reentrant_meta()
+	# test_subclass_strategy()
 	print("END")
 
 if __name__ == "__main__":

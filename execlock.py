@@ -12,10 +12,10 @@ from typing import Optional, List, Set
 from property_cached import cached_property
 import portalocker
 import psutil
-import util.fileio
-import util.string
-from util.string import ranged_int
-import util.contextman
+import ppyutil.fileio
+import ppyutil.string
+from ppyutil.string import ranged_int
+import ppyutil.contextman
 
 # Constants
 SYSLOCK_PATH = "/var/lock/syslock"
@@ -36,7 +36,7 @@ class ProcessIDMeta(type):
 	@staticmethod
 	def from_pid(pid):
 		try:
-			# noinspection PyProtectedMember
+			# noinspection PyProtectedMember, PyUnresolvedReferences
 			ident = psutil.Process(pid)._ident
 		except psutil.Error as e:
 			raise OSError(f"Failed to retrieve ProcessID for PID {pid}: {e}") from None
@@ -88,7 +88,7 @@ def named_lock_path(lock_name, relative_to=SYSLOCK_PATH):
 	# Return the named lock path
 	if lock_name is None:
 		return None
-	return os.path.join(relative_to, 'named', util.string.ensure_filename(lock_name + '.lock'))
+	return os.path.join(relative_to, 'named', ppyutil.string.ensure_filename(lock_name + '.lock'))
 
 # Check whether the process is currently exiting
 def process_exiting():
@@ -100,7 +100,7 @@ def process_exiting():
 #
 
 # Context manager that allows system-wide code execution locking (via locking of a specified system-wide file)
-class ExecutionLock(metaclass=util.contextman.ReentrantMeta):
+class ExecutionLock(metaclass=ppyutil.contextman.ReentrantMeta):
 
 	def __init__(self, lock_path, relative_to=SYSLOCK_PATH, makedirs=True, dir_mode=0o777, file_mode=0o666, umask=0o000, blocking=True, timeout=DEFAULT_TIMEOUT, check_interval=DEFAULT_CHECK_INTERVAL, shared_lock=False, lock_delay=0):
 		# lock_path = Path of the desired system-wide lock file that should govern the code execution lock (global absolute path, or path relative to relative_to, or None)
@@ -127,7 +127,7 @@ class ExecutionLock(metaclass=util.contextman.ReentrantMeta):
 
 		self._our_pid = os.getpid()
 		self._our_str = f"{self._our_pid:10d}\n"  # This lock file content is compliant with the Linux Filesystem Hierarchy Standard (FHS) 3.0 for /var/lock
-		self._file_opener = util.fileio.FileOpener(set_flags=os.O_DSYNC, mode=self._file_mode, umask=self._umask)
+		self._file_opener = ppyutil.fileio.FileOpener(set_flags=os.O_DSYNC, mode=self._file_mode, umask=self._umask)
 
 		self._relative_to = SYSLOCK_PATH
 		self._makedirs = True
@@ -158,7 +158,7 @@ class ExecutionLock(metaclass=util.contextman.ReentrantMeta):
 		else:
 			self._lock_path = os.path.join(self._relative_to, lock_path)
 			if self._makedirs:
-				with util.fileio.change_umask(self._umask):
+				with ppyutil.fileio.change_umask(self._umask):
 					os.makedirs(os.path.dirname(self._lock_path), mode=self._dir_mode, exist_ok=True)
 			self._lock = portalocker.Lock(filename=self._lock_path, mode='w', opener=self._file_opener)
 
@@ -316,7 +316,7 @@ class NamedLock(ExecutionLock):
 #
 
 # Context manager that allows counted system-wide code execution locking (via locking of a specified system-wide file)
-class ExecutionCLock(metaclass=util.contextman.ReentrantMeta):
+class ExecutionCLock(metaclass=ppyutil.contextman.ReentrantMeta):
 
 	def __init__(self, lock_path, max_count, relative_to=SYSLOCK_PATH, makedirs=True, dir_mode=0o777, file_mode=0o666, umask=0o000, blocking=True, timeout=DEFAULT_TIMEOUT, check_interval=DEFAULT_CHECK_INTERVAL, lock_delay=0):
 		# lock_path = Path of the desired system-wide lock file that should govern the counted code execution lock (global absolute path, or path relative to relative_to, or None)
@@ -343,7 +343,7 @@ class ExecutionCLock(metaclass=util.contextman.ReentrantMeta):
 		self._our_id = ProcessID.ours
 		self._our_iid = id(self)
 		self._our_str = f"{self._our_id.pid} {'0' if self._our_id.ctime is None else self._our_id.ctime} {self._our_iid}"
-		self._file_opener = util.fileio.FileOpener(set_flags=os.O_CREAT, mode=self._file_mode, umask=self._umask)
+		self._file_opener = ppyutil.fileio.FileOpener(set_flags=os.O_CREAT, mode=self._file_mode, umask=self._umask)
 
 		self._relative_to = SYSLOCK_PATH
 		self._makedirs = True
@@ -379,7 +379,7 @@ class ExecutionCLock(metaclass=util.contextman.ReentrantMeta):
 			self._lock_path = os.path.join(self._relative_to, lock_path)
 			self._lock_path_swp = self._lock_path + '.swp'
 			if self._makedirs:
-				with util.fileio.change_umask(self._umask):
+				with ppyutil.fileio.change_umask(self._umask):
 					os.makedirs(os.path.dirname(self._lock_path), mode=self._dir_mode, exist_ok=True)
 			self._lock = portalocker.Lock(filename=self._lock_path, mode='r', opener=self._file_opener)
 			self._locked = False
@@ -479,12 +479,13 @@ class ExecutionCLock(metaclass=util.contextman.ReentrantMeta):
 										with open(self._lock_path_swp, 'w', opener=self._file_opener) as fhswp:
 											fhswp.writelines(new_contents)
 										os.replace(self._lock_path_swp, self._lock.fh.name)
-									except:
+									except:  # noqa
 										with contextlib.suppress(OSError):
 											os.unlink(self._lock_path_swp)
 										raise
 								self._locked = locked
 								if enter and self._locked and not exit_pushed:
+									# noinspection PyTypeChecker
 									stack.push(MethodType(ExecutionCLock.__exit__, self))
 									exit_pushed = True
 							else:
@@ -570,7 +571,7 @@ class NamedCLock(ExecutionCLock):
 #
 
 # Context manager that implements generic system-wide run level code execution locking
-class RunLevelLock(metaclass=util.contextman.ReentrantMeta):
+class RunLevelLock(metaclass=ppyutil.contextman.ReentrantMeta):
 
 	def __init__(self, lock_path, unlocked_level, base_level, run_levels, running_thres=None, solo_thres=None, relative_to=SYSLOCK_PATH, makedirs=True, dir_mode=0o777, file_mode=0o666, umask=0o000, check_interval=DEFAULT_CHECK_INTERVAL, lock_delay=0):
 		# lock_path = Base path of the system-wide lock files that should govern the run level code execution lock (global absolute file path, or file path relative to relative_to, or None)
@@ -666,7 +667,7 @@ class RunLevelLock(metaclass=util.contextman.ReentrantMeta):
 		else:
 			self._lock_path = os.path.join(self._relative_to, lock_path)
 			if self._makedirs:
-				with util.fileio.change_umask(self._umask):
+				with ppyutil.fileio.change_umask(self._umask):
 					os.makedirs(os.path.dirname(self._lock_path), mode=self._dir_mode, exist_ok=True)
 			self._lock[1].set_lock_path(self._lock_path, relative_to=self._relative_to, makedirs=False)
 			for ilvl, lock in enumerate(self._lock[2:], 2):
@@ -756,7 +757,7 @@ class RunLevelLock(metaclass=util.contextman.ReentrantMeta):
 		return False
 
 	# noinspection PyProtectedMember
-	class LevelCM(metaclass=util.contextman.ReentrantMeta):
+	class LevelCM(metaclass=ppyutil.contextman.ReentrantMeta):
 
 		def __init__(self, run_lock, level):
 			self._run_lock = run_lock
@@ -870,7 +871,7 @@ class RunLevelLock(metaclass=util.contextman.ReentrantMeta):
 		return RunLockStatus(processes=processes, lock=lock_statuses, base_lockable=base_lockable, solo_lockable=solo_lockable)
 
 	# noinspection PyProtectedMember
-	class SoloCM(metaclass=util.contextman.ReentrantMeta):
+	class SoloCM(metaclass=ppyutil.contextman.ReentrantMeta):
 
 		def __init__(self, run_lock, ensure_level=False):
 			self._run_lock = run_lock
@@ -925,6 +926,7 @@ class RunLevelLock(metaclass=util.contextman.ReentrantMeta):
 		with contextlib.ExitStack() as stack:
 
 			self._solo_lock.shared_lock = False
+			# noinspection PyTypeChecker
 			stack.enter_context(self._solo_lock)
 			self._set_running(True, exclusive=True)
 

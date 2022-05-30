@@ -8,7 +8,7 @@ import contextlib
 import collections
 import dataclasses
 from typing import Any, Optional, Callable, Iterable
-from util.classes import instance_method_of
+from ppyutil.classes import instance_method_of
 
 # Dynamic context error class
 class DynamicContextError(Exception):
@@ -325,7 +325,7 @@ class DynamicContext(contextlib.AbstractContextManager):
 					suppressed_exc = True
 					pending_raise = False
 					exc_details = (None, None, None)
-			except:
+			except:  # noqa (contextlib.ExitStack also uses a bare except here)
 				new_exc_details = sys.exc_info()
 				_fix_exception_context(new_exc_details[1], exc_details[1])
 				pending_raise = True
@@ -472,6 +472,7 @@ class ReentrantMeta(type):
 		def apply_wrapper(method_name, wrapper):
 			if method_name in attrs:
 				orig_method = getattr(cls, method_name)
+
 				@functools.wraps(orig_method)
 				def new_method(self, *args, **kwargs):
 					if type(self) is cls:

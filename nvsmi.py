@@ -4,6 +4,7 @@
 from pynvml.smi import *
 
 # NVIDIA SMI user class
+# noinspection PyPep8Naming
 class NvidiaSMI:
 
 	def __init__(self):
@@ -23,7 +24,7 @@ class NvidiaSMI:
 		return self._impl.format(*args, **kwargs)
 
 # NVIDIA SMI wrapper metaclass
-class _NvidiaSMI_meta(type):
+class _NvidiaSMIMeta(type):
 
 	@property
 	def _nvidia_smi__handles(cls):
@@ -31,7 +32,9 @@ class _NvidiaSMI_meta(type):
 		return cls._NvidiaSMI__handles
 
 # NVIDIA SMI wrapper class
-class _NvidiaSMI(metaclass=_NvidiaSMI_meta):
+# noinspection PyPep8Naming
+class _NvidiaSMI(metaclass=_NvidiaSMIMeta):
+
 	__instance = None
 	__handles = None
 	__ref_count = 0

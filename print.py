@@ -6,7 +6,7 @@ import pprint
 from shutil import get_terminal_size
 from colored import stylize, fg as setfg, bg as setbg, attr as setatt
 from timeit import default_timer
-from .interpreter import is_notebook
+from ppyutil.interpreter import is_notebook
 
 # Fixed printable width used for notebooks
 notebook_width = 96

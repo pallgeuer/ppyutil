@@ -9,6 +9,7 @@ import collections
 #
 
 # Class property
+# noinspection PyPep8Naming
 class classproperty(property):
 	# Note: __set__() does not get called when setting an attribute of a class, so this does not intercept or protect against class-level writes to the property
 
@@ -24,6 +25,7 @@ class classproperty(property):
 		return self.fget(objtype)
 
 # Static property
+# noinspection PyPep8Naming
 class staticproperty(property):
 	# Note: __set__() does not get called when setting an attribute of a class, so this does not intercept or protect against class-level writes to the property
 
@@ -38,6 +40,7 @@ class staticproperty(property):
 
 # Function decorator that inserts the decorated function as an instance method of an existing class, optionally changing the function's name in the process
 # This can be useful, for example, if you are using metaclasses to add methods to a class and want them to appear as if they had been defined normally inside the class body
+# noinspection PyPep8Naming
 class instance_method_of:
 
 	def __init__(self, cls, name=None, mangle=False):
@@ -88,7 +91,7 @@ class OrderedEnum(enum.Enum):
 class EnumLU(enum.Enum):
 
 	@classmethod
-	def fromStr(cls, string, default=_NONE):
+	def from_str(cls, string, default=_NONE):
 		string = string.lower()
 		for name, enumval in cls.__members__.items():
 			if string == name.lower():
@@ -99,7 +102,7 @@ class EnumLU(enum.Enum):
 			return default
 
 	@classmethod
-	def hasStr(cls, string):
+	def has_str(cls, string):
 		string = string.lower()
 		for name in cls.__members__:
 			if string == name.lower():
@@ -117,7 +120,7 @@ class EnumFI(enum.Enum):
 		super().__init_subclass__(**kwargs)
 		cls._values = []
 
-	# noinspection PyProtectedMember, PyArgumentList
+	# noinspection PyProtectedMember, PyArgumentList, PyUnresolvedReferences
 	def __new__(cls, *args, **kwargs):
 		value = args[0]
 		if isinstance(value, enum.auto):
