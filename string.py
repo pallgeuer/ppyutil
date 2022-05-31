@@ -54,6 +54,16 @@ def clean_string_lite(string):
 	string = clean_spaces(string)
 	return string
 
+# Convert a string representation of truth to a boolean
+def strtobool(value):
+	value = value.lower()
+	if value in ('y', 'yes', 't', 'true', 'on', '1'):
+		return True
+	elif value in ('n', 'no', 'f', 'false', 'off', '0'):
+		return False
+	else:
+		raise ValueError(f"Invalid truth value: {value}")
+
 # Ensure that a string corresponds to a legal unix filename, making the minimal changes possible
 # Resource: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_170
 def ensure_filename(string):
