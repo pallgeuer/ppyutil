@@ -1,6 +1,7 @@
 # OpenCV utilities
 
 # Imports
+from typing import Tuple
 import cv2
 
 # Video capture context manager
@@ -23,13 +24,17 @@ class VideoCaptureCM:
 # Video writer context manager
 class VideoWriterCM:
 
-	def __init__(self, *args, **kwargs):
+	def __init__(self, filename: str, fourcc: int, fps: float, frame_size: Tuple[int, int], *args, api_pref: int = cv2.CAP_ANY):
+		self.filename = filename
+		self.api_pref = api_pref
+		self.fourcc = fourcc
+		self.fps = fps
+		self.frame_size = frame_size
 		self.args = args
-		self.kwargs = kwargs
 		self.writer = None
 
 	def __enter__(self):
-		self.writer = cv2.VideoWriter(*self.args, **self.kwargs)
+		self.writer = cv2.VideoWriter(self.filename, self.api_pref, self.fourcc, self.fps, self.frame_size, *self.args)
 		return self.writer
 
 	def __exit__(self, *args):
