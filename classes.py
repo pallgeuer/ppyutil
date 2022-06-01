@@ -61,7 +61,7 @@ class instance_method_of:
 #
 
 # For default arguments that may be None
-_NONE = object()
+NONE = object()
 
 # Ordered enumeration
 class OrderedEnum(enum.Enum):
@@ -91,12 +91,12 @@ class OrderedEnum(enum.Enum):
 class EnumLU(enum.Enum):
 
 	@classmethod
-	def from_str(cls, string, default=_NONE):
+	def from_str(cls, string, default=NONE):
 		string = string.lower()
 		for name, enumval in cls.__members__.items():
 			if string == name.lower():
 				return enumval
-		if default is _NONE:
+		if default is NONE:
 			raise LookupError(f"Failed to convert case insensitive string to enum type {cls.__name__}: '{string}'")
 		else:
 			return default
