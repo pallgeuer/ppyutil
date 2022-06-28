@@ -33,9 +33,15 @@ class VideoWriterCM:
 		self.args = args
 		self.writer = None
 
+	def __getattr__(self, item):
+		if self.writer:
+			return getattr(self.writer, item)
+		else:
+			raise AttributeError
+
 	def __enter__(self):
 		self.writer = cv2.VideoWriter(self.filename, self.api_pref, self.fourcc, self.fps, self.frame_size, *self.args)
-		return self.writer
+		return self
 
 	def __exit__(self, *args):
 		if self.writer:
