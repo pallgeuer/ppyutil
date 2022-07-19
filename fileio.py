@@ -2,7 +2,16 @@
 
 # Imports
 import os
+import os.path
 import contextlib
+
+# Make a path absolute if it or its directory name exists
+def get_abs_path(path, check_basename=False):
+	# path = Path string to convert to absolute
+	# check_basename = Whether the entire path must exist (True), or only the directory name (False)
+	# Return the absolute path, or the unchanged input path if the existence check failed
+	check_path = path if check_basename else os.path.dirname(path)
+	return os.path.abspath(path) if check_path and os.path.exists(check_path) else path
 
 # Context manager that temporarily changes the process umask (user file mode creation mask)
 @contextlib.contextmanager
