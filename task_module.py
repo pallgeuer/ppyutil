@@ -7,6 +7,9 @@ import contextlib
 import multiprocessing as mp
 from typing import Any
 
+# Global constants
+DATA_PENDING = object()
+
 # Element class
 class Element(abc.ABC):
 
@@ -101,7 +104,7 @@ class ModuleTask(abc.ABC):
 
 	def step(self):
 		# Return whether the next call to step() will have work to do
-		if not (self.input_done and self.output_done):
+		if not (self.input_done and self.output_done) and (not self.input_receiver or self.input_receiver.new_data()):
 			output_data = None
 			if not self.input_done:
 				input_data = self.input_receiver.receive() if self.input_receiver else None
@@ -112,8 +115,9 @@ class ModuleTask(abc.ABC):
 			if not self.output_done:
 				if not self.input_receiver:
 					output_data = self.process(None)
-				for output_sender in self.output_senders:
-					output_sender.send(output_data)
+				if output_data != DATA_PENDING:
+					for output_sender in self.output_senders:
+						output_sender.send(output_data)
 				if output_data is None:
 					self.output_done = True
 		return not (self.input_done and self.output_done)
@@ -190,6 +194,11 @@ class Receiver(abc.ABC):
 		# Return the received data or raise BlockingIOError if block is False but no data is available
 		pass
 
+	@abc.abstractmethod
+	def new_data(self) -> bool:
+		# Return whether new data has become available since the last data that was returned from receive()
+		pass
+
 # Sender class
 class Sender(abc.ABC):
 
@@ -210,19 +219,30 @@ class FieldReceiver(Receiver):
 		self.sender = sender
 
 	def receive(self, block=True):
-		return self.sender.data
+		if self.sender.data_new:
+			self.sender.data_new = False
+			return self.sender.data
+		elif block:
+			raise OSError("No new data => Field receiver cannot block and wait for new data")
+		else:
+			raise BlockingIOError
+
+	def new_data(self):
+		return self.sender.data_new
 
 # Field sender class
 class FieldSender(Sender):
 
 	def __init__(self):
 		self.data = None
+		self.data_new = False
 
 	def create_receiver(self):
 		return FieldReceiver(self)
 
 	def send(self, data):
 		self.data = data
+		self.data_new = True
 
 # Queue receiver class
 class QueueReceiver(Receiver):
@@ -236,6 +256,9 @@ class QueueReceiver(Receiver):
 		except queue.Empty:
 			raise BlockingIOError
 		return data
+
+	def new_data(self):
+		return self.queue.full()
 
 # Queue sender class
 class QueueSender(Sender):
@@ -267,6 +290,9 @@ class SharedMemoryReceiver(Receiver):
 			self.write_event.clear()
 			self.read_event.set()
 		return data
+
+	def new_data(self):
+		return self.write_event.is_set()
 
 	@abc.abstractmethod
 	def read_data(self):
