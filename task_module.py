@@ -100,6 +100,9 @@ class ModuleTask(abc.ABC):
 		# Return whether to suppress the exception
 		self.input_done = True
 		self.output_done = True
+		if exc_type is not None:
+			for output_sender in self.output_senders:
+				output_sender.send(None)
 		return False
 
 	def step(self):
@@ -153,7 +156,7 @@ class Module(Element):
 	def __enter__(self):
 		# Return the class instance
 		if self.remote:
-			self.proc = mp.Process(target=self.run, args=(self.input_receiver, self.output_senders, self.task_args, self.task_kwargs))
+			self.proc = mp.Process(target=self.run, args=(self.input_receiver, self.output_senders, self.task_args, self.task_kwargs), daemon=True)
 			self.proc.start()
 		else:
 			self.task = self.create_task(self.input_receiver, self.output_senders, *self.task_args, **self.task_kwargs)
@@ -164,6 +167,8 @@ class Module(Element):
 		# exc_type, exc_val, exc_tb = Details of the exception that occurred (if any)
 		# Return whether to suppress the exception
 		if self.remote:
+			if exc_type is not None:
+				self.proc.terminate()
 			self.proc.join()
 			self.proc = None
 		else:
