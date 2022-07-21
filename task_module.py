@@ -4,10 +4,11 @@
 import abc
 import queue
 import contextlib
-import multiprocessing as mp
+import multiprocessing
 from typing import Any
 
 # Global constants
+MP = multiprocessing.get_context('spawn')
 DATA_PENDING = object()
 
 # Element class
@@ -156,7 +157,7 @@ class Module(Element):
 	def __enter__(self):
 		# Return the class instance
 		if self.remote:
-			self.proc = mp.Process(target=self.run, args=(self.input_receiver, self.output_senders, self.task_args, self.task_kwargs), daemon=True)
+			self.proc = MP.Process(target=self.run, args=(self.input_receiver, self.output_senders, self.task_args, self.task_kwargs), daemon=True)
 			self.proc.start()
 		else:
 			self.task = self.create_task(self.input_receiver, self.output_senders, *self.task_args, **self.task_kwargs)
@@ -269,7 +270,7 @@ class QueueReceiver(Receiver):
 class QueueSender(Sender):
 
 	def __init__(self):
-		self.queue = mp.Queue(maxsize=1)
+		self.queue = MP.Queue(maxsize=1)
 
 	def create_receiver(self):
 		return QueueReceiver(self.queue)
@@ -308,9 +309,9 @@ class SharedMemoryReceiver(Receiver):
 class SharedMemorySender(Sender):
 
 	def __init__(self):
-		self.lock = mp.RLock()
-		self.read_event = mp.Event()
-		self.write_event = mp.Event()
+		self.lock = MP.RLock()
+		self.read_event = MP.Event()
+		self.write_event = MP.Event()
 		self.read_event.set()
 
 	@abc.abstractmethod
