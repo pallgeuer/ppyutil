@@ -112,11 +112,15 @@ class ModuleTask(abc.ABC):
 	# their next call to step(), and they subsequently all exit.
 
 	def __init__(self, input_receiver, output_senders, abort_event):
-		# input_receiver = Receiver to retrieve input data from
+		# input_receiver = Receiver to retrieve input data from (may be None)
 		# output_senders = Sequence of senders to supply with output data
 		# abort_event = Event that can be used to abort the pipeline
 		self.input_receiver = input_receiver
+		if self.input_receiver:
+			self.input_receiver.init()
 		self.output_senders = tuple(output_senders)
+		for output_sender in self.output_senders:
+			output_sender.init()
 		self.abort_event = abort_event
 		self.input_done = True
 		self.output_done = True
@@ -289,6 +293,10 @@ class Pipeline:
 # Receiver class
 class Receiver(abc.ABC):
 
+	def init(self):
+		# Perform initialisation actions that need to occur within the target process that the receiver will operate in
+		pass
+
 	@abc.abstractmethod
 	def receive(self, block=True) -> Any:
 		# block = Whether to block until data is available
@@ -302,6 +310,10 @@ class Receiver(abc.ABC):
 
 # Sender class
 class Sender(abc.ABC):
+
+	def init(self):
+		# Perform initialisation actions that need to occur within the target process that the sender will operate in
+		pass
 
 	@abc.abstractmethod
 	def create_receiver(self) -> Receiver:
