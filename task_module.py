@@ -10,7 +10,7 @@ import multiprocessing
 from typing import Any
 
 # Constants
-MP = multiprocessing.get_context('spawn')  # Note: Spawn is required instead of fork if you want to use CUDA in the subprocesses
+MP = multiprocessing.get_context('forkserver')  # Note: Forkserver (or spawn) is required instead of fork if you want to use CUDA in the subprocesses
 
 # Data signal classes
 class DataPending:
