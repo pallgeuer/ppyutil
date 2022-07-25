@@ -4,7 +4,6 @@
 import abc
 import time
 import queue
-import itertools
 import contextlib
 import multiprocessing
 from typing import Any
@@ -53,6 +52,16 @@ class Element(abc.ABC):
 		# Return whether the next call to step() will have work to do
 		pass
 
+	@abc.abstractmethod
+	def is_ongoing(self):
+		# Return whether (local) work is ongoing
+		pass
+
+	@abc.abstractmethod
+	def cleanup(self):
+		# Return whether the next call to cleanup() will have work to do
+		pass
+
 # Sink class
 class Sink(Element):
 
@@ -77,13 +86,29 @@ class Sink(Element):
 	def step(self, block=True):
 		# block = Whether to block until sink data is available
 		# Return the received sink data and whether the next call to step() will have work to do
-		sink_data = None
-		if not self.done:
+		if self.done or self.pipeline.abort_event.is_set():
+			return None, False
+		else:
+			# noinspection PyUnusedLocal
+			sink_data = None
 			with contextlib.suppress(BlockingIOError):
 				sink_data = self.get_data(block=block)
 				if sink_data is None:
 					self.done = True
-		return sink_data, not self.done
+			return sink_data, not (self.done or self.pipeline.abort_event.is_set())
+
+	def is_ongoing(self):
+		return not self.done
+
+	def cleanup(self):
+		if self.done:
+			return False
+		else:
+			with contextlib.suppress(BlockingIOError):
+				sink_data = self.get_data(block=False)
+				if sink_data is None:
+					self.done = True
+			return not self.done
 
 	def get_data(self, block=True):
 		# block = Whether to block until data is available
@@ -107,9 +132,9 @@ class ModuleTask(abc.ABC):
 	# it continues to query and receive input data (until an input None is received at least), but doesn't do anything with
 	# that data. This is to make sure that parent tasks don't get blocked trying to send data that no-one receives anymore.
 	# If process() at any point returns DataPending, all child tasks skip their call to process() and essentially just wait
-	# for future data that is not DataPending. If process() at any point returns DataAbort, None is sent to all output
-	# senders and the pipeline is put into the aborted state. This is noticed by all other tasks in the pipeline during
-	# their next call to step(), and they subsequently all exit.
+	# for future data that is not DataPending. If process() at any point returns DataAbort, the pipeline is put into the
+	# aborted state. This is noticed by all other tasks in the pipeline during their next call to step(), and they
+	# subsequently all exit and clean up after themselves for a safe pipeline exit.
 
 	def __init__(self, input_receiver, output_senders, abort_event):
 		# input_receiver = Receiver to retrieve input data from (may be None)
@@ -134,44 +159,58 @@ class ModuleTask(abc.ABC):
 	def __exit__(self, exc_type, exc_val, exc_tb):
 		# exc_type, exc_val, exc_tb = Details of the exception that occurred (if any)
 		# Return whether to suppress the exception
-		if not (self.input_done and self.output_done):
+		if exc_type is not None or self.is_ongoing():
 			self.abort_event.set()
-		self.handle_exit()
+			while self.cleanup():
+				time.sleep(0.003)
 		return False
-
-	def handle_exit(self):
-		if not self.output_done:
-			for output_sender in self.output_senders:
-				output_sender.send(None)
-		self.input_done = True
-		self.output_done = True
 
 	def step(self):
 		# Return whether the next call to step() will have work to do
-		if not (self.input_done and self.output_done):
-			if self.abort_event.is_set():
-				self.handle_exit()
-			else:
-				output_data = None
-				if not self.input_done:
-					input_data = self.input_receiver.receive(block=True) if self.input_receiver else None
-					if input_data is None:
-						self.input_done = True
-					elif input_data == DataPending:
-						output_data = DataPending
-					elif not self.output_done:
-						output_data = self.process(input_data)
-				if not self.output_done:
-					if not self.input_receiver:
-						output_data = self.process(None)
-					if output_data == DataAbort:
-						self.abort_event.set()
-						self.handle_exit()
-					elif output_data != DataPending:
-						for output_sender in self.output_senders:
-							output_sender.send(output_data)
-						if output_data is None:
-							self.output_done = True
+		if (self.input_done and self.output_done) or self.abort_event.is_set():
+			return False
+		else:
+			output_data = None
+			if not self.input_done:
+				input_data = self.input_receiver.receive(block=True) if self.input_receiver else None
+				if input_data is None:
+					self.input_done = True
+				if self.abort_event.is_set():
+					return False
+				if input_data == DataPending:
+					output_data = DataPending
+				elif input_data is not None and not self.output_done:
+					output_data = self.process(input_data)
+			if not self.output_done:
+				if not self.input_receiver:
+					output_data = self.process(None)
+				if self.abort_event.is_set():
+					return False
+				elif output_data == DataAbort:
+					self.abort_event.set()
+					return False
+				else:
+					for output_sender in self.output_senders:
+						output_sender.send(output_data, block=True)
+					if output_data is None:
+						self.output_done = True
+			return not ((self.input_done and self.output_done) or self.abort_event.is_set())
+
+	def is_ongoing(self):
+		return not (self.input_done and self.output_done)
+
+	def cleanup(self):
+		if not self.input_done:
+			with contextlib.suppress(BlockingIOError):
+				input_data = self.input_receiver.receive(block=False) if self.input_receiver else None
+				if input_data is None:
+					self.input_done = True
+		if not self.output_done:
+			output_sents = tuple(output_sender.send(None, block=False) for output_sender in self.output_senders)
+			if all(output_sents):
+				self.output_done = True
+			elif any(output_sents):
+				self.output_senders = tuple(output_sender for output_sender, output_sent in zip(self.output_senders, output_sents) if output_sent)
 		return not (self.input_done and self.output_done)
 
 	@abc.abstractmethod
@@ -228,6 +267,14 @@ class Module(Element):
 		# Return whether the next call to step() will have work to do
 		return self.task is not None and self.task.step()
 
+	def is_ongoing(self):
+		# Return whether (local) work is ongoing
+		return self.task is not None and self.task.is_ongoing()
+
+	def cleanup(self):
+		# Return whether the next call to cleanup() will have work to do
+		return self.task is not None and self.task.cleanup()
+
 	@classmethod
 	def run(cls, input_receiver, output_senders, abort_event, task_args, task_kwargs):
 		# input_receiver = Receiver to retrieve input data from
@@ -247,15 +294,28 @@ class Pipeline:
 		# wait_time = If no local work needs to be done to run the pipeline and there is not just one sink that can comfortably block, wait this number of ms per cycle to avoid running an empty main loop at 100% CPU
 		self.modules = tuple(module for module in modules if not isinstance(module, Sink))
 		self.sinks = tuple(module for module in modules if isinstance(module, Sink))
+		self.elements = self.modules + self.sinks
 		self.wait_time = wait_time / 1000
 		self.abort_event = MP.Event()
-		for element in itertools.chain(self.modules, self.sinks):
+		for element in self.elements:
 			element.register_pipeline(self)
 
-	# noinspection PyUnusedLocal
-	def _exit_handler(self, exc_type, exc_val, exc_tb):
-		if exc_type is not None:
+	def __enter__(self):
+		return self
+
+	def __exit__(self, exc_type, exc_val, exc_tb):
+		# exc_type, exc_val, exc_tb = Details of the exception that occurred (if any)
+		# Return whether to suppress the exception
+		if exc_type is not None or any(element.is_ongoing() for element in self.elements):
 			self.abort_event.set()
+			while True:
+				cleanup_ongoing = False
+				for element in self.elements:
+					cleanup_ongoing |= element.cleanup()
+				if cleanup_ongoing:
+					time.sleep(0.003)
+				else:
+					break
 		return False
 
 	def run(self):
@@ -266,8 +326,9 @@ class Pipeline:
 				stack.enter_context(self.sinks[i])
 			for i in range(len(self.modules) - 1, -1, -1):
 				stack.enter_context(self.modules[i])
-			stack.push(self._exit_handler)
-			while not self.abort_event.is_set():
+			# noinspection PyTypeChecker
+			stack.enter_context(self)
+			while True:
 				local_work_ongoing = False
 				for module in self.modules:
 					local_work_ongoing |= module.step()
@@ -278,7 +339,7 @@ class Pipeline:
 						self.process_sink_data(sink, sink_data)
 					any_sink_ongoing |= sink_ongoing
 				if not local_work_ongoing:
-					if not any_sink_ongoing and not zero_sinks:  # If there are no sinks then we cannot know when the pipeline is actually finished, so we just keep going until we receive a kill signal (e.g. SIGINT) or an internal abort
+					if not any_sink_ongoing and (not zero_sinks or self.abort_event.is_set()):  # If there are no sinks then we cannot know when the pipeline is actually finished, so we just keep going until we receive a kill signal (e.g. SIGINT) or an internal abort
 						break
 					if not single_sink:
 						time.sleep(self.wait_time)
@@ -303,11 +364,6 @@ class Receiver(abc.ABC):
 		# Return the received data or raise BlockingIOError if block is False but no data is available
 		pass
 
-	@abc.abstractmethod
-	def new_data(self) -> bool:
-		# Return whether new data has become available since the last data that was returned from receive()
-		pass
-
 # Sender class
 class Sender(abc.ABC):
 
@@ -321,8 +377,10 @@ class Sender(abc.ABC):
 		pass
 
 	@abc.abstractmethod
-	def send(self, data):
+	def send(self, data, block=True):
 		# data = Data to send
+		# block = Whether to block until it is possible to send the data
+		# Return whether the data was sent
 		pass
 
 # Field receiver class
@@ -340,9 +398,6 @@ class FieldReceiver(Receiver):
 		else:
 			raise BlockingIOError
 
-	def new_data(self):
-		return self.sender.data_new
-
 # Field sender class
 class FieldSender(Sender):
 
@@ -353,9 +408,16 @@ class FieldSender(Sender):
 	def create_receiver(self):
 		return FieldReceiver(self)
 
-	def send(self, data):
-		self.data = data
-		self.data_new = True
+	def send(self, data, block=True):
+		if self.data_new:
+			if block:
+				raise OSError("Data is already new => Field receiver cannot block and wait for data to make room")
+			else:
+				return False
+		else:
+			self.data = data
+			self.data_new = True
+			return True
 
 # Queue receiver class
 class QueueReceiver(Receiver):
@@ -365,13 +427,9 @@ class QueueReceiver(Receiver):
 
 	def receive(self, block=True):
 		try:
-			data = self.queue.get(block=block)
+			return self.queue.get(block=block)
 		except queue.Empty:
 			raise BlockingIOError
-		return data
-
-	def new_data(self):
-		return self.queue.full()
 
 # Queue sender class
 class QueueSender(Sender):
@@ -382,8 +440,12 @@ class QueueSender(Sender):
 	def create_receiver(self):
 		return QueueReceiver(self.queue)
 
-	def send(self, data):
-		self.queue.put(data, block=True)
+	def send(self, data, block=True):
+		try:
+			self.queue.put(data, block=block)
+			return True
+		except queue.Full:
+			return False
 
 # Shared memory receiver class
 class SharedMemoryReceiver(Receiver):
@@ -404,9 +466,6 @@ class SharedMemoryReceiver(Receiver):
 			self.read_event.set()
 		return data
 
-	def new_data(self):
-		return self.write_event.is_set()
-
 	@abc.abstractmethod
 	def read_data(self):
 		# Return the data stored in shared memory (needs to be able to receive None/DataPending)
@@ -426,12 +485,16 @@ class SharedMemorySender(Sender):
 		# Return a shared memory receiver that has access to all the required shared memory variables
 		return SharedMemoryReceiver(self.lock, self.read_event, self.write_event)
 
-	def send(self, data):
-		self.read_event.wait()
+	def send(self, data, block=True):
+		if block:
+			self.read_event.wait()
+		elif not self.read_event.is_set():
+			return False
 		with self.lock:
 			self.write_data(data)
 			self.read_event.clear()
 			self.write_event.set()
+		return True
 
 	@abc.abstractmethod
 	def write_data(self, data):
