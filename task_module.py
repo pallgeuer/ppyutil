@@ -335,7 +335,7 @@ class Pipeline:
 				any_sink_ongoing = False
 				for sink in self.sinks:
 					sink_data, sink_ongoing = sink.step(block=not local_work_ongoing and single_sink)
-					if sink_ongoing and sink_data is not None:
+					if sink_ongoing and sink_data is not None and sink_data != DataPending:
 						self.process_sink_data(sink, sink_data)
 					any_sink_ongoing |= sink_ongoing
 				if not local_work_ongoing:
