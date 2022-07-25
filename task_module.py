@@ -152,8 +152,8 @@ class ModuleTask(abc.ABC):
 
 	def __enter__(self):
 		# Return the class instance
-		self.input_done = False
-		self.output_done = False
+		self.input_done = not self.input_receiver
+		self.output_done = not self.output_senders
 		return self
 
 	def __exit__(self, exc_type, exc_val, exc_tb):
@@ -170,30 +170,27 @@ class ModuleTask(abc.ABC):
 		if (self.input_done and self.output_done) or self.abort_event.is_set():
 			return False
 		else:
-			output_data = None
+			input_data = None
 			if not self.input_done:
-				input_data = self.input_receiver.receive(block=True) if self.input_receiver else None
+				input_data = self.input_receiver.receive(block=True)
 				if input_data is None:
 					self.input_done = True
 				if self.abort_event.is_set():
 					return False
-				if input_data == DataPending:
-					output_data = DataPending
-				elif input_data is not None and not self.output_done:
-					output_data = self.process(input_data)
-			if not self.output_done:
-				if not self.input_receiver:
-					output_data = self.process(None)
+			if input_data == DataPending:
+				output_data = DataPending
+			else:
+				output_data = self.process(input_data)
 				if self.abort_event.is_set():
 					return False
 				elif output_data == DataAbort:
 					self.abort_event.set()
 					return False
-				else:
-					for output_sender in self.output_senders:
-						output_sender.send(output_data, block=True)
-					if output_data is None:
-						self.output_done = True
+			if not self.output_done:
+				for output_sender in self.output_senders:
+					output_sender.send(output_data, block=True)
+				if output_data is None:
+					self.output_done = True
 			return not ((self.input_done and self.output_done) or self.abort_event.is_set())
 
 	def is_ongoing(self):
@@ -202,7 +199,7 @@ class ModuleTask(abc.ABC):
 	def cleanup(self):
 		if not self.input_done:
 			with contextlib.suppress(BlockingIOError):
-				input_data = self.input_receiver.receive(block=False) if self.input_receiver else None
+				input_data = self.input_receiver.receive(block=False)
 				if input_data is None:
 					self.input_done = True
 		if not self.output_done:
