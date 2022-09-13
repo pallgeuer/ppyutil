@@ -32,15 +32,15 @@ def fyaw_of_rotmat(R):
 	return wrap(fyaw)
 
 # Calculate rotation matrix from axis-angle specification
-def rotmat_from_axis(axis, angle):
+def rotmat_from_axis(axis, angle, **npargs):
 	cang = math.cos(angle)
 	sang = math.sin(angle)
 	if axis == Axis.X:
-		return np.array(((1, 0, 0), (0, cang, -sang), (0, sang, cang)))
+		return np.array(((1, 0, 0), (0, cang, -sang), (0, sang, cang)), **npargs)
 	elif axis == Axis.Y:
-		return np.array(((cang, 0, sang), (0, 1, 0), (-sang, 0, cang)))
+		return np.array(((cang, 0, sang), (0, 1, 0), (-sang, 0, cang)), **npargs)
 	elif axis == Axis.Z:
-		return np.array(((cang, -sang, 0), (sang, cang, 0), (0, 0, 1)))
+		return np.array(((cang, -sang, 0), (sang, cang, 0), (0, 0, 1)), **npargs)
 	else:
 		raise ValueError(f"Unrecognised axis specification: {axis}")
 # EOF
